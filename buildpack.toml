@@ -1,0 +1,15 @@
+api = "0.4"
+
+[buildpack]
+id = "btl/jemalloc"
+version = "0.0.1"
+name = "jemalloc Buildpack"
+homepage = "https://github.com/BTLzdravtech/jemalloc-buildpack"
+description = "Installs jemalloc runtime"
+keywords = ["jemalloc"]
+
+[[buildpack.licenses]]
+type = "MIT"
+
+[[stacks]]
+id = "io.buildpacks.stacks.bionic"

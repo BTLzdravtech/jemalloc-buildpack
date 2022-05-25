@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+
+set -eo pipefail
+
+# Ingest args
+
+layers_dir="$1"
+env_dir="$2/env"
+plan_path="$3"
+
+# Default version
+
+JEMALLOC_VERSION="5.3.0"
+
+# Set user provided env vars
+
+if compgen -G "${env_dir}/*" > /dev/null; then
+ for var in ${env_dir}/*; do
+   declare "$(basename ${var})=$(<${var})"
+ done
+fi
+
+echo "[jemalloc]"
+jemalloc_layer=$layers_dir/jemalloc
+mkdir -p $jemalloc_layer
+
+JEMALLOC_PACKAGE_DIR="$jemalloc_layer/package"
+JEMALLOC_CACHE_DIR="$jemalloc_layer/cache/$JEMALLOC_VERSION"
+
+# cached checks to see if there is a compatible version in the cache.
+function cached() {
+  # Returns false when there is no matching version in the cache.
+  if [[ ! -d $JEMALLOC_CACHE_DIR ]]; then
+    return 1
+  fi
+
+  if [ -f "$JEMALLOC_CACHE_DIR/.stack" ]; then
+    CACHED_STACK=$(cat $JEMALLOC_CACHE_DIR/.stack)
+  fi
+
+  # True when the downloaded version in the cache is for the same stack as the
+  # compiling dyno. CACHED_STACK will be empty when the .stack file is missing
+  # which also forces a fresh download.
+  [[ $CACHED_STACK == $CNB_STACK_ID ]]
+}
+
+function download_jemalloc() {
+  url="https://github.com/BTLzdravtech/jemalloc-buildpack/releases/download/$CNB_STACK_ID/jemalloc-$JEMALLOC_VERSION.tar.bz2"
+
+  # Disable exit on command failure so we can provide better error messages
+  set +e
+
+  echo "       jemalloc: Fetching $url"
+  status=$(curl -sL -f  -w "%{http_code}" -o /tmp/jemalloc.tar.bz2 $url)
+
+  if [[ $status -ge 300 ]]; then
+    echo " !     jemalloc: Server returned HTTP $status"
+    exit 1
+  fi
+
+  # Reenable exit on failure
+  set -e
+
+  mkdir -p $JEMALLOC_CACHE_DIR
+  tar -xj -f /tmp/jemalloc.tar.bz2 -C $JEMALLOC_CACHE_DIR
+
+  # Store the stack version (e.g. paketobuildpacks-full) that was downloaded to force a
+  # redownload should the stack change.
+  echo "$CNB_STACK_ID" > "$JEMALLOC_CACHE_DIR/.stack"
+}
+
+echo "-----> jemalloc: Vendoring $JEMALLOC_VERSION"
+
+# Check if this version of jemalloc is in the cache and download it if it
+# doesn't exist.
+if ! cached; then
+  download_jemalloc
+fi
+
+mkdir -p $JEMALLOC_PACKAGE_DIR
+cp -r $JEMALLOC_CACHE_DIR -T $JEMALLOC_PACKAGE_DIR/
+
+echo "-----> jemalloc: Building runtime environment"
+
+jemalloc_env_dir=$jemalloc_layer/env
+mkdir -p $jemalloc_env_dir
+echo -n "$JEMALLOC_PACKAGE_DIR/bin" > $jemalloc_env_dir/PATH.prepend
+echo -n "$JEMALLOC_PACKAGE_DIR/lib/libjemalloc.so" > $jemalloc_env_dir/LD_PRELOAD.prepend
+
+echo -n ":" > $jemalloc_env_dir/PATH.delim
+echo -n " " > $jemalloc_env_dir/LD_PRELOAD.delim
+
+echo "launch = true" > ${jemalloc_layer}.toml
+echo "build = true" >> ${jemalloc_layer}.toml
+echo "cache = true" >> ${jemalloc_layer}.toml
