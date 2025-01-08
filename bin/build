@@ -90,6 +90,9 @@ echo -n "$JEMALLOC_PACKAGE_DIR/lib/libjemalloc.so" > $jemalloc_env_dir/LD_PRELOA
 echo -n ":" > $jemalloc_env_dir/PATH.delim
 echo -n " " > $jemalloc_env_dir/LD_PRELOAD.delim
 
-echo "launch = true" > ${jemalloc_layer}.toml
-echo "build = true" >> ${jemalloc_layer}.toml
-echo "cache = true" >> ${jemalloc_layer}.toml
+cat >> ${jemalloc_layer}.toml <<EOL
+[types]
+launch = true
+build = true
+cache = true
+EOL
